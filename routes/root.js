@@ -1,31 +1,23 @@
 "use strict";
 import dotenv from "dotenv";
-import throttle from "lodash.throttle"
-import { GoogleSpreadsheet } from "google-spreadsheet"
-import { google } from "googleapis"
-import { SPREADSHEET_SCOPES } from "../constants/index.js"
-import { extractHeaderToken, cleanUpInputText, truncateText } from "../utils/helpers.js"
+import throttle from "lodash.throttle";
+import { GoogleSpreadsheet } from "google-spreadsheet";
+import { google } from "googleapis";
+import { SPREADSHEET_SCOPES } from "../constants/index.js";
+import {
+  extractHeaderToken,
+  cleanUpInputText,
+  authorize,
+  retrieveHighestScore,
+  generateOAuthClient,
+  truncateText,
+} from "../utils/helpers.js";
 
 dotenv.config();
 
 /**
- * Load or request or authorization to call APIs.
  *
  */
-async function authorize(userId) {
-  const client = await generateOAuthClient();
-
-  const authorizeUrl = client.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: SPREADSHEET_SCOPES,
-    state: JSON.stringify({
-      userId,
-    }),
-  });
-
-  return authorizeUrl;
-}
 
 const throttleAction = async ({ interval, callback }) => {
   let intervalId;
@@ -33,17 +25,13 @@ const throttleAction = async ({ interval, callback }) => {
   intervalId = setTimeout(async () => await callback(), interval);
 };
 
-const retrieveHighestScore = (scores) => {
-  if (!scores) return null;
-
-  return scores.reduce((acc, cur) => (cur.Score > acc.Score ? cur : acc), {
-    Score: 0,
-  });
-};
-
 export default async function (fastify, opts) {
   fastify.get("/", async function (request, reply) {
-    return reply.view("templates/index.ejs");
+    return reply.send({ data: "Index Route" });
+  });
+
+  fastify.get("/status", async function (request, reply) {
+    return reply.send({ data: "Application is running!" });
   });
 
   fastify.post("/authenticate", async function ({ body }, reply) {
@@ -372,4 +360,4 @@ export default async function (fastify, opts) {
       reply.code(400).send({ message: "Error getting user data" });
     }
   });
-};
+}

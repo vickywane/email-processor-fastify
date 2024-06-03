@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test": "node --test test/**/*.test.js",
-    "start": "fastify start app.js",
+    "start": "node app.js",
+    "build": "fastify build app.js",
     "dev": "fastify start -w -l info -P app.js -p 4040",
     "start-log": "fastify start -w -l info -P app.js"
   },

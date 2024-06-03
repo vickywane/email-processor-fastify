@@ -1,11 +1,46 @@
-import path from "path";
+import dotenv from "dotenv";
+import { OAuth2Client } from "google-auth-library";
+import { SPREADSHEET_SCOPES } from "../constants/index.js";
 
-const CREDENTIALS_PATH = path.join(process.cwd(), "credentials.json");
+dotenv.config();
+
+export const generateOAuthClient = async () => {
+  const client = new OAuth2Client({
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI,
+  });
+
+  return client;
+};
 
 export const extractHeaderToken = (header) => {
   const token = header?.split("Bearer ")[1];
 
   return token;
+};
+
+export const retrieveHighestScore = (scores) => {
+  if (!scores) return null;
+
+  return scores.reduce((acc, cur) => (cur.Score > acc.Score ? cur : acc), {
+    Score: 0,
+  });
+};
+
+export const authorize = async (userId) => {
+  const client = await generateOAuthClient();
+
+  const authorizeUrl = client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: SPREADSHEET_SCOPES,
+    state: JSON.stringify({
+      userId,
+    }),
+  });
+
+  return authorizeUrl;
 };
 
 export const authorizeWithToken = async (token) => {
@@ -35,18 +70,4 @@ export const truncateText = (text, length = 200) => {
   const arr = text.split(" ").slice(0, length);
 
   return arr.join(" ");
-};
-
-export const generateOAuthClient = async () => {
-  const localAuthCredFile = await fs.readFile(CREDENTIALS_PATH);
-  const keys = JSON.parse(localAuthCredFile);
-  const keyData = keys.installed || keys.web;
-
-  const client = new OAuth2Client({
-    clientId: keyData.client_id,
-    clientSecret: keyData.client_secret,
-    redirectUri: keyData.redirect_uris[0],
-  });
-
-  return client;
 };
