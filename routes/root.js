@@ -11,6 +11,8 @@ import {
   retrieveHighestScore,
   generateOAuthClient,
   truncateText,
+  authorizeWithToken,
+  compileEntities,
 } from "../utils/helpers.js";
 
 dotenv.config();
@@ -86,7 +88,6 @@ export default async function (fastify, opts) {
     }
   });
 
-  // TODO: handle the google auth token flow here!
   fastify.get("/integrate", async function (request, reply) {
     try {
       const token = extractHeaderToken(request.headers?.authorization);
@@ -176,16 +177,18 @@ export default async function (fastify, opts) {
           .send({ message: "Error authenticating with Google 0Auth client" });
       }
 
+      if (body?.columns.length <= 1) {
+        return reply.code(400).send({
+          message: "Columns are required to create a new sheet",
+        });
+      } else if (!body?.name) {
+        return reply.code(400).send({ message: "Document name is required" });
+      }
+
       const service = google.sheets({ version: "v4", auth });
 
-      // TODO: Figure out how to create a default sheet with the desired fields without creating a seperate document.
-      const documentName = body?.name || "Tracker Sheet";
-      const sheetHeaderValues = body?.columns || [
-        "name",
-        "link",
-        "date",
-        "status",
-      ];
+      const documentName = body?.name;
+      const sheetHeaderValues = body?.columns;
 
       const { data } = await service.spreadsheets.create({
         resource: {
@@ -212,7 +215,7 @@ export default async function (fastify, opts) {
           integrationType: ["google-spreadsheet"],
           documentName,
           tracking: sheetHeaderValues,
-          lastSync: new Date().toISOString(),
+          lastSync: null,
           dateCreated: new Date().toISOString(),
         });
 
@@ -255,7 +258,10 @@ export default async function (fastify, opts) {
 
       const { data } = await gmail.users.messages.list({
         userId: "me",
+        maxResults: 35,
       });
+
+      let totalProcessedEmails = 0;
 
       for (const item of data.messages) {
         const { data: messageData } = await gmail.users.messages.get({
@@ -263,71 +269,124 @@ export default async function (fastify, opts) {
           userId: "me",
         });
 
-        const parts = messageData.payload.parts;
-        let emailBody = "";
+        const processedTextRef = fastify.firebase
+          .firestore()
+          .collection("processed-texts")
+          .doc(messageData?.threadId);
 
-        if (parts && parts.length) {
-          parts.forEach((part) => {
-            if (part.mimeType === "text/plain") {
-              emailBody = Buffer.from(part.body.data, "base64").toString(
-                "utf8"
-              );
+        const isEmailClassified = (await processedTextRef.get()).data();
+
+        if (!isEmailClassified) {
+          const parts = messageData.payload.parts;
+          let emailBody = "";
+
+          if (parts && parts.length) {
+            parts.forEach((part) => {
+              if (part.mimeType === "text/plain") {
+                emailBody = Buffer.from(part.body.data, "base64").toString(
+                  "utf8"
+                );
+              }
+            });
+          }
+
+          if (emailBody.length >= 10) {
+            const cleanedText = cleanUpInputText(emailBody);
+            const processedText = truncateText(cleanedText, 50);
+
+            const classifyText = await fetch(process.env.CLASSIFIER_ENDPOINT, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ text: processedText }),
+            });
+
+            if (classifyText.status !== 200) {
+              console.log("\n CLASSIFY TEXT ERROR =>", classifyText);
+
+              return reply
+                .code(500)
+                .send({ message: "Unable to process text from email" });
             }
-          });
-        }
 
-        if (emailBody.length >= 10) {
-          const cleanedText = cleanUpInputText(emailBody);
-          const processedText = truncateText(cleanedText, 50);
+            const classificationData = await classifyText.json();
+            const highestScore = retrieveHighestScore(classificationData);
 
-          // throttleAction({
-          //   callback: async () => {
+            if (
+              highestScore.Name === "REJECTION" ||
+              highestScore.Name === "ACCEPTED"
+            ) {
+              const extractEntities = await fetch(process.env.EXTRACT_ENDPOINT, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ text: processedText }),
+              });
 
-          const externalRequest = await fetch(process.env.CLASSIFIER_ENDPOINT, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ text: processedText }),
-          });
+              if (extractEntities.status !== 200) {
+                return reply
+                  .code(500)
+                  .send({ message: "Unable to extract entities from email" });
+              }
 
-          const data = await externalRequest.json();
+              const entitiesData = await extractEntities.json();
 
-          // console.log("DATA =>", data);
+              if (entitiesData?.length > 0) {
+                const document = new GoogleSpreadsheet(body?.documentId, auth);
+                await document.loadInfo();
+                const defaultSheet = document.sheetsByIndex[0];
 
-          // if (Object.hasOwn(data, "Score")) {
-          const highestScore = retrieveHighestScore(data);
+                const rowData = compileEntities(entitiesData);
 
-          const document = new GoogleSpreadsheet(body?.documentId, auth);
-          await document.loadInfo();
+                await defaultSheet.addRow({
+                  Status: highestScore?.Name,
+                  "Date Applied": new Date().toLocaleDateString(),
+                  ...rowData,
+                });
 
-          const defaultSheet = document.sheetsByIndex[0];
+                totalProcessedEmails += 1;
+              }
+            }
 
-          // const headers = defaultSheet.headerValues
-
-          await defaultSheet.addRow({
-            Status: highestScore?.Name,
-            "Date Applied": new Date().toLocaleDateString(),
-            Name: "",
-          });
-
-          console.log("\n HIGHEST SCORE =>", highestScore, " \n");
-
-          // store result in google sheet
-          // }
-
-          // console.log(
-          //   " \n\n\n START \n\n\n",
-          //   processedText,
-          //   " \n\n\n END \n\n\n"
-          // );
-          //   },
-          //   interval: 30000,
-          // });
+            await fastify.firebase
+              .firestore()
+              .collection("processed-texts")
+              .doc(messageData?.threadId)
+              .set({
+                processingResult: classificationData,
+                textOriginId: messageData?.threadId,
+                userId: userAuthInfo?.user_id,
+                dateCreated: new Date().toISOString(),
+                documentId: body?.documentId,
+              });
+          }
         }
       }
 
-      reply.send({ message: "Data Synced" });
+      const applicationsDocsRef = fastify.firebase
+        .firestore()
+        .collection("application-sheets");
+
+      const userItems = await applicationsDocsRef
+        .where("documentId", "==", body?.documentId)
+        .get();
+
+      userItems.forEach(async (doc) => {
+        await doc.ref.update({
+          lastSync: new Date().toISOString(),
+        });
+      });
+
+      reply.send({
+        message: `Sync process completed. ${
+          totalProcessedEmails < 1
+            ? "You dont have new emails to process"
+            : `${totalProcessedEmails} emails were processed`
+        }.`,
+        status: "SYNC_SUCCESSFUL",
+      });
     } catch (error) {
       console.log("Syncing data", error);
 

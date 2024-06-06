@@ -10,6 +10,7 @@
   "scripts": {
     "test": "node --test test/**/*.test.js",
     "start": "node app.js",
+    "watch": "nodemon start",
     "build": "fastify build app.js",
     "dev": "fastify start -w -l info -P app.js -p 4040",
     "start-log": "fastify start -w -l info -P app.js"
@@ -39,6 +40,7 @@
     "google-spreadsheet": "^4.1.2",
     "googleapis": "^137.1.0",
     "lodash.debounce": "^4.0.8",
-    "lodash.throttle": "^4.1.1"
+    "lodash.throttle": "^4.1.1",
+    "nodemon": "^3.1.3"
   }
 }

@@ -88,7 +88,7 @@ fastify.register(AutoLoad, {
   options: Object.assign({}, options),
 });
 
-fastify.listen({ host: host, port: port }, function (err, address) {
+fastify.listen({ host, port }, function (err, address) {
   if (err) {
     fastify.log.error(err);
     process.exit(1);

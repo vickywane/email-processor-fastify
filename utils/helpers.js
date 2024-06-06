@@ -28,6 +28,18 @@ export const retrieveHighestScore = (scores) => {
   });
 };
 
+export const compileEntities = (entities) => {
+  if (!entities) return null;
+
+  for (const item of entities) {
+    if (item["Type"] === "COMPANY_NAME") {
+      return {
+        name: item.Text,
+      };
+    }
+  }
+};
+
 export const authorize = async (userId) => {
   const client = await generateOAuthClient();
 
