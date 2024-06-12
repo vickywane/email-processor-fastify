@@ -34,7 +34,12 @@ export const compileEntities = (entities) => {
   for (const item of entities) {
     if (item["Type"] === "COMPANY_NAME") {
       return {
-        name: item.Text,
+        "Company Name": item.Text,
+      };
+    }
+    if (item["Type"] === "ROLE") {
+      return {
+        "Job Role": item.Text,
       };
     }
   }
