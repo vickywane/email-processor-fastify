@@ -14,6 +14,7 @@ import {
   authorizeWithToken,
   compileEntities,
 } from "../utils/helpers.js";
+import { makeRequest } from "../utils/fetchHandler.js";
 
 dotenv.config();
 
@@ -294,44 +295,31 @@ export default async function (fastify, opts) {
             const cleanedText = cleanUpInputText(emailBody);
             const processedText = truncateText(cleanedText, 50);
 
-            const classifyText = await fetch(process.env.CLASSIFIER_ENDPOINT, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ text: processedText }),
-            });
+            const classifyTextRequest = await makeRequest("/classifytext", { text: processedText })
 
-            if (classifyText.status !== 200) {
-              console.log("\n CLASSIFY TEXT ERROR =>", classifyText);
+            if (classifyTextRequest.status !== 200) {
+              console.log("\n CLASSIFY TEXT ERROR =>", classifyTextRequest);
 
               return reply
                 .code(500)
                 .send({ message: "Unable to process text from email" });
             }
 
-            const classificationData = await classifyText.json();
-            const highestScore = retrieveHighestScore(classificationData);
+            const classificationData = await classifyTextRequest.json();
 
             if (
-              highestScore.Name === "REJECTION" ||
-              highestScore.Name === "ACCEPTED"
+              classificationData?.category === "Accepted" ||
+              classificationData?.category === "Rejected"
             ) {
-              const extractEntities = await fetch(process.env.EXTRACT_ENDPOINT, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ text: processedText }),
-              });
+              const extractEntitiesRequest = await makeRequest("/extracttextentities", { text: processedText })
 
-              if (extractEntities.status !== 200) {
+              if (extractEntitiesRequest?.status !== 200) {
                 return reply
                   .code(500)
                   .send({ message: "Unable to extract entities from email" });
               }
 
-              const entitiesData = await extractEntities.json();
+              const entitiesData = await extractEntitiesRequest?.json();
 
               if (entitiesData?.length > 0) {
                 const document = new GoogleSpreadsheet(body?.documentId, auth);
@@ -341,7 +329,7 @@ export default async function (fastify, opts) {
                 const rowData = compileEntities(entitiesData);
 
                 await defaultSheet.addRow({
-                  Status: highestScore?.Name,
+                  Status: classificationData?.category,
                   "Date Applied": new Date().toLocaleDateString(),
                   ...rowData,
                 });

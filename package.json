@@ -11,9 +11,7 @@
     "test": "node --test test/**/*.test.js",
     "start": "node app.js",
     "watch": "nodemon start",
-    "build": "fastify build app.js",
-    "dev": "fastify start -w -l info -P app.js -p 4040",
-    "start-log": "fastify start -w -l info -P app.js"
+    "build": "fastify build app.js"
   },
   "keywords": [],
   "author": "",

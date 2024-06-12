@@ -32,14 +32,21 @@ export const compileEntities = (entities) => {
   if (!entities) return null;
 
   for (const item of entities) {
-    if (item["Type"] === "COMPANY_NAME") {
+    if (Object.hasOwn(item, "Company_Name")) {
       return {
-        "Company Name": item.Text,
+        "Company Name": item["Company_Name"],
       };
     }
-    if (item["Type"] === "ROLE") {
+
+    if (Object.hasOwn(item, "Status")) {
       return {
-        "Job Role": item.Text,
+        Status: item["Status"],
+      };
+    }
+
+    if (Object.hasOwn(item, "Job_Role")) {
+      return {
+        "Job Role": item["Job_Role"],
       };
     }
   }
