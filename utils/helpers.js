@@ -59,6 +59,7 @@ export const authorize = async (userId) => {
     access_type: "offline",
     prompt: "consent",
     scope: SPREADSHEET_SCOPES,
+    redirect_uri: process.env.GOOGLE_REDIRECT_URI,
     state: JSON.stringify({
       userId,
     }),
@@ -67,11 +68,12 @@ export const authorize = async (userId) => {
   return authorizeUrl;
 };
 
-export const authorizeWithToken = async (token) => {
+export const authorizeWithToken = async (integrations) => {
   try {
+    const googleIntegration = integrations.find((item) => item.provider === "google")
     const client = await generateOAuthClient();
 
-    client.setCredentials(token);
+    client.setCredentials(googleIntegration?.tokens);
 
     return client;
   } catch (error) {
